@@ -305,7 +305,7 @@ export function createSurface(host, opts) {
     // Back to 100%, keeping the middle of the screen where it is.
     zoomTo(z) { zoomAt(w / 2, h / 2, z); },
     zoomBy(k) { zoomAt(w / 2, h / 2, view.z * k); },
-    fit() { const b = board(); setView(fitView(b, w, h, Math.min(w, h) * 0.08, 2)); },
+    fit() { const b = board(); setView(b.strokes.length ? fitView(b, w, h, Math.min(w, h) * 0.08, 2) : { x: 0, y: 0, z: 1 }); },
     // Stop whatever's in progress, without keeping it (opening another board, say).
     cancel() { act = null; fingers.clear(); tap = null; request(true); },
   };

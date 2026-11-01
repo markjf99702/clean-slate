@@ -346,7 +346,7 @@ document.addEventListener('keydown', e => {
   if (mod && (k === '=' || k === '+')) { e.preventDefault(); surface.zoomBy(1.25); return; }
   if (mod && k === '-') { e.preventDefault(); surface.zoomBy(0.8); return; }
   if (mod || e.altKey) return;
-  if (e.key === ' ') { e.preventDefault(); surface.setSpace(true); document.body.classList.add('panning'); return; }
+  if (e.key === ' ' && !e.target.closest?.('button, a')) { e.preventDefault(); surface.setSpace(true); document.body.classList.add('panning'); return; }
   if (e.key === 'Escape') { closeSheets(); closePop(); return; }
   if (k === 'p') setTool('pen');
   else if (k === 'h') setTool('marker');
