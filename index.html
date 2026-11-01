@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>Clean Slate</title>
+  <meta name="description" content="A whiteboard for a tablet and a pen, in the browser. Lines get thicker the harder you press, your palm is ignored, and boards can be saved to your own Google Drive. No account, no ads.">
+  <meta property="og:title" content="Clean Slate">
+  <meta property="og:description" content="A whiteboard for your tablet and pen, in the browser.">
+  <meta property="og:image" content="https://clean-slate.junkdrawer.works/og.png">
+  <meta property="og:url" content="https://clean-slate.junkdrawer.works/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#f3f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b2125" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Clean Slate">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="preload" href="fonts/figtree.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <noscript><p class="noscript">Clean Slate needs JavaScript to draw.</p></noscript>
+  <main id="app">
+    <div id="board" class="board" role="img" aria-label="The board. Draw on it with a pen, a finger or the mouse."></div>
+    <p id="hint" class="hint" hidden></p>
+
+    <header class="top">
+      <button type="button" id="boardsBtn" class="pill boards-btn" aria-label="Boards" title="Boards">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5.5" width="13" height="13" rx="2"/><path d="M7.5 3.5h11a2 2 0 0 1 2 2v11"/></svg>
+        <span id="boardName">Board 1</span>
+      </button>
+      <nav id="tools" class="tools pill" aria-label="Drawing tools"></nav>
+      <div class="corner">
+        <button type="button" id="cloud" class="pill icon-btn cloud" hidden></button>
+        <button type="button" id="menuBtn" class="pill icon-btn" aria-label="Menu" title="Menu">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+        </button>
+      </div>
+    </header>
+    <div id="pop" class="pop pill" hidden></div>
+    <button type="button" id="zoom" class="zoom pill" hidden title="Back to 100%">100%</button>
+
+    <div id="scrim" class="scrim" hidden></div>
+
+    <aside id="boards" class="sheet left" hidden aria-label="Boards">
+      <div class="sheet-head">
+        <h2>Boards</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <button type="button" id="newBoard" class="btn primary wide-btn">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        New board
+      </button>
+      <ul id="boardList" class="board-list"></ul>
+    </aside>
+
+    <aside id="menu" class="sheet right" hidden aria-label="Menu">
+      <div class="sheet-head">
+        <h2>This board</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <label class="field"><span>Name</span><input id="nameInput" type="text" maxlength="80" autocomplete="off" enterkeyhint="done"></label>
+      <div class="field"><span>Colour</span><div class="chips" id="bgs"></div></div>
+      <div class="field"><span>Lines</span><div class="chips" id="patterns"></div></div>
+      <div class="row">
+        <button type="button" class="btn" id="fit"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/></svg>Show it all</button>
+        <button type="button" class="btn quiet" id="clear">Clear this board</button>
+      </div>
+
+      <section class="files">
+        <h2>Save a picture</h2>
+        <div class="row">
+          <button type="button" class="btn" id="savePng"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>PNG</button>
+          <button type="button" class="btn" id="saveSvg"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>SVG</button>
+          <button type="button" class="btn" id="sharePng" hidden><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M6 12v6.5A1.5 1.5 0 0 0 7.5 20h9a1.5 1.5 0 0 0 1.5-1.5V12"/></svg>Share</button>
+          <button type="button" class="btn" id="copyPng" hidden><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/></svg>Copy</button>
+        </div>
+        <p class="small">The whole drawing, with a little board around it. An SVG stays sharp at any size and opens again in Clean Slate.</p>
+      </section>
+
+      <section id="drive" class="drive" hidden></section>
+
+      <section>
+        <h2>Fingers</h2>
+        <label class="radio"><input type="radio" name="fingers" value="auto"><span><b>Draw until I use a pen</b> Then the pen draws and fingers move the board.</span></label>
+        <label class="radio"><input type="radio" name="fingers" value="draw"><span><b>Always draw</b> Two fingers still move and zoom.</span></label>
+        <label class="radio"><input type="radio" name="fingers" value="move"><span><b>Move the board</b> Only a pen or the mouse draws.</span></label>
+      </section>
+
+      <section class="files">
+        <h2>Backup</h2>
+        <p class="small">Boards are kept in this browser on this device. A backup file holds all of them, to keep or to open on another device.</p>
+        <p class="small warn" id="kept" hidden>This browser isn’t keeping boards (a private window, perhaps). Save a picture or a backup before you close it.</p>
+        <div class="row">
+          <button type="button" class="btn" id="backup"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>Save a backup</button>
+          <button type="button" class="btn" id="restore"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V6.5A1.5 1.5 0 0 1 5.5 5h4l2 2h7A1.5 1.5 0 0 1 20 8.5V19"/><path d="M4 19h16"/></svg>Open a file</button>
+          <input type="file" id="restoreFile" accept=".json,.svg,application/json,image/svg+xml" hidden>
+        </div>
+      </section>
+
+      <section class="help">
+        <h2>How it works</h2>
+        <ul>
+          <li><b>Press harder</b> with a pen for a thicker line.</li>
+          <li><b>Two fingers</b> move and zoom the board. Tap with two fingers to undo, three to redo.</li>
+          <li><b>Your pen’s eraser</b> (or its side button, held down) erases whatever tool you’re on. The eraser takes away whole lines it touches.</li>
+          <li><b>Tap a tool twice</b> on a narrow screen for its colours and sizes.</li>
+          <li><b>With a keyboard:</b> P pen, H highlighter, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl + Z undo, Space + drag to move.</li>
+          <li><b>Add it to your home screen</b> to use it full screen, with no address bar. It works offline.</li>
+        </ul>
+      </section>
+
+      <footer class="jd-foot">
+        <a href="https://junkdrawer.works/">Part of junkdrawer.works</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://junkdrawer.works/privacy.html">Privacy</a>
+      </footer>
+    </aside>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </main>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

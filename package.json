@@ -1,0 +1,14 @@
+{
+  "name": "clean-slate",
+  "private": true,
+  "type": "module",
+  "description": "A whiteboard for your tablet and pen, in the browser.",
+  "scripts": {
+    "start": "npx --yes http-server -c-1 -p 8080 .",
+    "test": "node --test test/unit.test.mjs && node test/e2e.mjs",
+    "build": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10"
+  }
+}
