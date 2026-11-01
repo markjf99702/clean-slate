@@ -50,10 +50,11 @@ const until = async (ok, ms, what) => {
 function hands(page, cdp) {
   const mouse = (type, x, y, o = {}) => cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...o });
   return {
-    async pen(pts, o = {}) {
+    async pen(pts, { hold = 0, ...o } = {}) {
       const p = { pointerType: 'pen', ...o };
       await mouse('mousePressed', pts[0][0], pts[0][1], { ...p, force: pts[0][2] ?? 0.5 });
       for (const [x, y, f] of pts.slice(1)) await mouse('mouseMoved', x, y, { ...p, force: f ?? 0.5 });
+      if (hold) await wait(hold); // the pen held still at the end
       const [x, y] = pts[pts.length - 1];
       await mouse('mouseReleased', x, y, { ...p, force: 0 });
     },
@@ -76,6 +77,7 @@ function hands(page, cdp) {
 }
 const line = (x0, y0, x1, y1, n = 16, f = () => 0.5) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, f(i / n)]);
 const count = page => page.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes.length);
+const lastStroke = page => page.evaluate(() => { const b = cleanSlate.store.get(cleanSlate.current()); return b.strokes[b.strokes.length - 1]; });
 const view = page => page.evaluate(() => cleanSlate.surface.view);
 
 const browser = await pw.chromium.launch();
@@ -143,17 +145,35 @@ assert.equal(await count(page), 2, 'Ctrl+Z undoes');
 await page.keyboard.press('Control+Shift+z');
 assert.equal(await count(page), 3, 'Ctrl+Shift+Z redoes');
 
-// The eraser takes whole lines; the pen's side button erases with the pen in hand; undo brings them back.
+// The eraser rubs out just where it touches: the line stays either side of it, and the board shows through. Whole
+// lines takes away every line it touches. The pen's side button erases the same way with the pen in hand; undo brings
+// everything back.
 await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
+// The darkest red value in a short column of the board on screen, around the pen line at y = 450.
+const column = x => page.evaluate(x => { const d = document.querySelector('#board canvas.main').getContext('2d').getImageData(x, 440, 1, 20).data; let min = 255; for (let i = 0; i < d.length; i += 4) min = Math.min(min, d[i]); return min; }, x);
+await wait(100);
+assert.ok(await column(452) < 120, 'the pen line is there to start with');
 await page.click('[data-tool="eraser"]');
-await h.pen(line(450, 440, 450, 470, 6));
-assert.equal(await count(page), 2, 'the eraser took the pen line');
+assert.equal(await page.getAttribute('[data-mode="rub"]', 'aria-pressed'), 'true', 'the eraser rubs out to begin with');
+await h.pen(line(452, 425, 452, 475, 6));
+assert.equal(await count(page), 4, 'a rub-out is kept like a line');
+await wait(100);
+assert.ok(await column(452) > 200, 'where it rubbed, the board shows through');
+assert.ok(await column(300) < 120, 'the rest of the line is still there');
+await page.keyboard.press('Control+z');
+await wait(100);
+assert.ok(await column(452) < 120, 'undo puts it back');
+await page.click('[data-mode="lines"]');
+await h.pen(line(452, 425, 452, 475, 6));
+assert.equal(await count(page), 2, 'Whole lines takes the line it touches');
 await page.click('#undo');
 assert.equal(await count(page), 3, 'undo brought it back');
+await page.click('[data-mode="rub"]');
 await page.click('[data-tool="pen"]');
-await h.pen(line(450, 440, 450, 470, 6), { button: 'right', buttons: 2 });
-assert.equal(await count(page), 2, 'the pen’s side button erases');
+await h.pen(line(452, 425, 452, 475, 6), { button: 'right', buttons: 2 });
+assert.equal((await lastStroke(page)).tool, 'rub', 'the pen’s side button rubs out');
 await page.keyboard.press('Control+z');
+assert.equal(await count(page), 3);
 
 // Colours, sizes and the highlighter, kept for next time.
 await page.click('[data-color="red"]');
@@ -169,6 +189,35 @@ assert.equal(kept.pen.color, 'red');
 assert.equal(kept.pen.size, 2);
 assert.equal(kept.tool, 'marker');
 await page.click('[data-tool="pen"]');
+
+// Shapes: the shapes tool drags them out, and a line held still at the end snaps to the shape it looks like.
+await page.click('#tools [data-tool="shape"]');
+assert.equal(await page.isVisible('#pop [data-kind="ellipse"]'), true, 'the shapes tool offers its shapes');
+await page.click('#pop [data-kind="rect"]');
+await h.pen(line(560, 120, 760, 220, 8));
+let shape = await lastStroke(page);
+assert.equal(shape.shape, 'closed');
+assert.equal(shape.pts.length, 12, 'a rectangle is its four corners');
+assert.equal(shape.color, 'red', 'shapes take the pen’s colour');
+await page.click('#tools [data-tool="shape"]');
+await page.click('#pop [data-fill]');
+await page.click('#pop [data-kind="ellipse"]');
+await h.pen(line(800, 120, 900, 200, 8));
+shape = await lastStroke(page);
+assert.equal(shape.fill, 1, 'a filled ellipse');
+assert.equal(shape.pts.length, 72 * 3);
+await page.click('#tools [data-tool="pen"]');
+const roughCircle = Array.from({ length: 41 }, (_, i) => { const t = i / 40 * Math.PI * 2.06; return [700 + Math.cos(t) * (60 + Math.sin(i * 2) * 3), 620 + Math.sin(t) * 55]; });
+await h.pen(roughCircle, { hold: 700 });
+shape = await lastStroke(page);
+assert.equal(shape.shape, 'closed', 'a circle held still at the end snaps to a clean one');
+assert.equal(shape.pts.length, 72 * 3);
+await h.pen(roughCircle.map(([x, y]) => [x - 300, y]));
+assert.equal((await lastStroke(page)).shape, undefined, 'without holding still it stays as drawn');
+await h.pen(Array.from({ length: 25 }, (_, i) => [150 + i * 12, 560 + Math.sin(i) * 3]), { hold: 700 });
+shape = await lastStroke(page);
+assert.equal(shape.shape, 'line', 'a wobbly line held still goes straight');
+assert.equal(shape.pts[1], shape.pts[4], 'and level');
 
 // The board is still there after a reload, where it was left.
 const before = await count(page);
@@ -312,6 +361,7 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await A.p.press('#nameInput', 'Enter');
   await A.p.click('#menu [data-close]');
   await A.p.click('[data-tool="eraser"]');
+  await A.p.click('[data-mode="lines"]');
   await A.h.pen(line(300, 290, 300, 310, 4));
   await settle(A.p, 'A saved the rename');
   await settle(B.p, 'B read the rename');

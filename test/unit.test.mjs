@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, untouched, again, nextName, shareable } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { touches, contentBounds, outline } from '../js/ink.js';
+import { recognize, dragShape } from '../js/shapes.js';
 
 const stroke = (x, y, more = {}) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more });
 const clone = b => JSON.parse(JSON.stringify(b));
@@ -114,4 +115,89 @@ test('the drawing’s bounds include every stroke and its width', () => {
   const c = contentBounds(b.strokes);
   assert.ok(c.x0 < 0 && c.y0 < 0 && c.x1 > 220 && c.y1 > 100);
   assert.equal(contentBounds([]), null);
+});
+
+// ---------- shapes and rub-outs ----------
+let seed = 5;
+const wob = k => { seed = (seed * 16807) % 2147483647; return (seed / 2147483647 - 0.5) * 2 * k; };
+const traced = (corners, per = 20, k = 2.5) => {
+  const out = [], all = [...corners, corners[0]];
+  for (let i = 0; i < corners.length; i++) for (let j = 0; j < per; j++) { const [a, b] = [all[i], all[i + 1]], t = j / per; out.push([a[0] + (b[0] - a[0]) * t + wob(k), a[1] + (b[1] - a[1]) * t + wob(k)]); }
+  out.push([corners[0][0] + 3, corners[0][1] + 1]);
+  return out;
+};
+const round = (cx, cy, rx, ry) => Array.from({ length: 80 }, (_, i) => { const t = i / 79 * Math.PI * 2.07; return [cx + Math.cos(t) * rx + wob(3), cy + Math.sin(t) * ry + wob(3)]; });
+
+test('a hand-drawn line, box, triangle or circle is recognised', () => {
+  const ln = recognize(Array.from({ length: 30 }, (_, i) => [10 + i * 10 + wob(1), 100 + i * 0.3 + wob(2)]));
+  assert.equal(ln.shape, 'line');
+  assert.equal(ln.pts[0][1], ln.pts[1][1], 'a nearly level line is made level');
+  const box = recognize(traced([[0, 0], [300, 0], [300, 160], [0, 160]]));
+  assert.equal(box.shape, 'closed');
+  assert.equal(box.pts.length, 4);
+  assert.ok(Math.abs(box.pts[1][0] - box.pts[0][0] - 300) < 8 && Math.abs(box.pts[2][1] - box.pts[1][1] - 160) < 8, `the box is the size drawn: ${JSON.stringify(box.pts)}`);
+  assert.equal(box.pts[0][1], box.pts[1][1], 'and square to the board');
+  assert.equal(recognize(traced([[0, 200], [120, 0], [240, 200]], 25)).pts.length, 3, 'a triangle');
+  const circle = recognize(round(200, 200, 100, 96));
+  assert.equal(circle.pts.length, 72, 'a circle');
+  const r = circle.pts.map(([x, y]) => Math.hypot(x - 200, y - 200));
+  assert.ok(Math.max(...r) - Math.min(...r) < 0.5, 'nearly round is made round');
+  assert.equal(recognize(round(200, 200, 160, 70)).pts.length, 72, 'an ellipse');
+});
+
+test('scribbles, curves and tiny marks are left as drawn', () => {
+  assert.equal(recognize(Array.from({ length: 30 }, (_, i) => [10 + i * 10, 100 + Math.sin(i / 5) * 40])), null, 'a curve');
+  assert.equal(recognize(Array.from({ length: 60 }, (_, i) => [Math.sin(i * 1.7) * 80 + i * 3, Math.cos(i * 2.3) * 60])), null, 'a scribble');
+  assert.equal(recognize(round(10, 10, 3, 3)), null, 'a tiny loop');
+});
+
+test('the shapes tool makes exact shapes', () => {
+  assert.deepEqual(dragShape('rect', 10, 20, 110, 70).pts, [[10, 20], [110, 20], [110, 70], [10, 70]]);
+  assert.equal(dragShape('ellipse', 0, 0, 100, 50).pts.length, 72);
+  const arrow = dragShape('arrow', 0, 0, 100, 4);
+  assert.equal(arrow.shape, 'arrow');
+  assert.deepEqual(arrow.pts[1], [100.1, 0], 'nearly level is level');
+});
+
+test('rub-outs and shapes go into the SVG and come back out', () => {
+  const b = makeBoard('Blob');
+  const fat = stroke(0, 0, { size: 40 });
+  const rub = makeStroke({ tool: 'rub', size: 10, sim: 0, pts: [10, 4, 0.5, 12, 5, 0.5] });
+  const box = makeStroke({ tool: 'pen', color: 'blue', size: 3, sim: 0, pts: [0, 50, 0.5, 80, 50, 0.5, 80, 90, 0.5, 0, 90, 0.5], shape: 'closed', fill: true });
+  const arrow = makeStroke({ tool: 'pen', color: 'red', size: 3, sim: 0, pts: [100, 0, 0.5, 200, 0, 0.5], shape: 'arrow' });
+  addStrokes(b, [fat, rub, box, arrow]);
+  assert.equal(rub.color, '');
+  const svg = toSVG(b);
+  assert.match(svg, /<mask id="r0"/, 'a rub-out is a mask');
+  assert.match(svg, /<g mask="url\(#r0\)"><path d="M[^"]*Q[^"]*" fill="#1d1d1f"\/><\/g>/, 'over what was drawn before it, and nothing after');
+  assert.match(svg, /fill="#1f5ed6" stroke="#1f5ed6" stroke-width="3"/, 'a filled box');
+  assert.match(svg, /<path d="M100 0L200 0M[^"]+" fill="none" stroke="#d3302f"/, 'an arrow with its head');
+  const back = fromSVG(svg);
+  assert.equal(back.strokes[1].tool, 'rub');
+  assert.equal(back.strokes[2].shape, 'closed');
+  assert.equal(back.strokes[2].fill, 1);
+  assert.equal(back.strokes[3].shape, 'arrow');
+  assert.equal(contentKey(back), contentKey(b));
+});
+
+test('a rub-out or a shape that came back as a plain line from the first version stays what it was', () => {
+  const b = makeBoard('A');
+  const rub = makeStroke({ tool: 'rub', size: 10, sim: 0, pts: [1, 1, 0.5] });
+  const box = makeStroke({ tool: 'pen', color: 'ink', size: 3, sim: 0, pts: [0, 0, 0.5, 9, 0, 0.5, 9, 9, 0.5], shape: 'closed' });
+  addStrokes(b, [rub, box]);
+  const old = clone(b);
+  old.strokes = old.strokes.map(s => { const { shape, ...rest } = s; return { ...rest, tool: 'pen', color: 'ink' }; });
+  for (const m of [mergeBoards(b, old), mergeBoards(old, b)]) {
+    assert.equal(m.strokes[0].tool, 'rub');
+    assert.equal(m.strokes[1].shape, 'closed');
+  }
+});
+
+test('the eraser touches a filled shape anywhere inside it, and an outline only on its edge', () => {
+  const pts = [0, 0, 0.5, 100, 0, 0.5, 100, 100, 0.5, 0, 100, 0.5];
+  const filled = makeStroke({ tool: 'pen', color: 'ink', size: 3, sim: 0, pts, shape: 'closed', fill: true });
+  const outlined = makeStroke({ tool: 'pen', color: 'ink', size: 3, sim: 0, pts, shape: 'closed' });
+  assert.ok(touches(filled, 50, 50, 50, 50, 4));
+  assert.ok(!touches(outlined, 50, 50, 50, 50, 4));
+  assert.ok(touches(outlined, 2, 50, 2, 50, 4), 'the side closing it back to the start counts');
 });

@@ -33,8 +33,13 @@ export const MARKERS = {
   orange: { name: 'Orange', light: '#ffc98a', dark: '#ffb870' },
 };
 export const SIZES = { pen: [2, 4, 8], marker: [12, 20, 32], eraser: [14, 30, 64] };
+// Stroke kinds: a pen line, a highlighter line, or a rub-out (an eraser line, which clears whatever was drawn before
+// it where it passes). A pen or highlighter line can also be a shape: `shape` is 'line', 'arrow' or 'closed' (a
+// rectangle, ellipse or triangle, as its corners or as many points around it), and a closed one can be `fill`ed.
+export const SHAPES = ['line', 'arrow', 'closed'];
 
 export const shade = (stroke, bg) => {
+  if (stroke.tool === 'rub') return BACKGROUNDS[bg]?.bg || '#fff';
   const set = stroke.tool === 'marker' ? MARKERS : INKS;
   const c = set[stroke.color] || Object.values(set)[0];
   return BACKGROUNDS[bg]?.dark ? c.dark : c.light;
@@ -55,10 +60,12 @@ export function makeBoard(name = 'Board', now = Date.now()) {
 }
 
 // A stroke as it's kept: points flattened to [x, y, pressure, x, y, pressure, …], rounded so a board stays small.
-export function makeStroke({ tool, color, size, pts, sim }, t = stamp()) {
+export function makeStroke({ tool, color, size, pts, sim, shape, fill }, t = stamp()) {
   const flat = [];
   for (let i = 0; i < pts.length; i += 3) flat.push(round(pts[i], 10), round(pts[i + 1], 10), round(pts[i + 2], 100));
-  return { id: newId('s'), t, tool, color, size: round(size, 100), sim: sim ? 1 : 0, pts: flat };
+  const s = { id: newId('s'), t, tool, color: tool === 'rub' ? '' : color, size: round(size, 100), sim: sim ? 1 : 0, pts: flat };
+  if (shape && tool !== 'rub') { s.shape = shape; if (fill && shape === 'closed') s.fill = 1; }
+  return s;
 }
 const round = (v, k) => Math.round(v * k) / k;
 
@@ -88,6 +95,8 @@ export function removeStrokes(board, ids, now = Date.now()) {
   return board;
 }
 
+const richer = s => s.tool === 'rub' || !!s.shape;
+
 // Which of two settings wins: the one set later; on a tie, the same one on every device.
 function later(a, b, key) {
   const at = key + 'At';
@@ -100,7 +109,13 @@ export function mergeBoards(a, b) {
   const gone = { ...a.gone };
   for (const [id, t] of Object.entries(b.gone || {})) gone[id] = Math.max(gone[id] || 0, t);
   const seen = new Map();
-  for (const s of [...a.strokes, ...b.strokes]) if (!gone[s.id] && !seen.has(s.id)) seen.set(s.id, s);
+  for (const s of [...a.strokes, ...b.strokes]) {
+    if (gone[s.id]) continue;
+    const had = seen.get(s.id);
+    // The first version of Clean Slate didn't know rub-outs or shapes and kept them as plain pen lines. If one of
+    // those copies comes back, the stroke as it was made wins.
+    if (!had || (!richer(had) && richer(s))) seen.set(s.id, s);
+  }
   const n = later(a, b, 'name'), g = later(a, b, 'bg'), p = later(a, b, 'pattern');
   return {
     ...a,
@@ -135,10 +150,12 @@ export function cleanBoard(o) {
   const strokes = [];
   for (const s of Array.isArray(o.strokes) ? o.strokes : []) {
     if (!s || typeof s.id !== 'string' || !Array.isArray(s.pts) || !s.pts.length || s.pts.length % 3) continue;
-    const tool = s.tool === 'marker' ? 'marker' : 'pen';
+    const tool = s.tool === 'marker' || s.tool === 'rub' ? s.tool : 'pen';
     const set = tool === 'marker' ? MARKERS : INKS;
     const pts = s.pts.map(v => num(v));
-    strokes.push({ id: s.id.slice(0, 64), t: num(s.t), tool, color: set[s.color] ? s.color : Object.keys(set)[0], size: Math.max(0.1, Math.min(500, num(s.size, 4))), sim: s.sim ? 1 : 0, pts });
+    const c = { id: s.id.slice(0, 64), t: num(s.t), tool, color: tool === 'rub' ? '' : set[s.color] ? s.color : Object.keys(set)[0], size: Math.max(0.1, Math.min(500, num(s.size, 4))), sim: s.sim ? 1 : 0, pts };
+    if (tool !== 'rub' && SHAPES.includes(s.shape)) { c.shape = s.shape; if (s.fill && s.shape === 'closed') c.fill = 1; }
+    strokes.push(c);
   }
   const gone = {};
   if (o.gone && typeof o.gone === 'object') for (const [id, t] of Object.entries(o.gone)) gone[id.slice(0, 64)] = num(t, 1);

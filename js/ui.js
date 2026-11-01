@@ -20,6 +20,11 @@ export const icon = {
   copy: svg('<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>'),
   cloud: svg('<path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7.5 9 4.75 4.75 0 0 0 7 18.5z"/>'),
   open: svg('<path d="M4 19V6.5A1.5 1.5 0 0 1 5.5 5h4l2 2h7A1.5 1.5 0 0 1 20 8.5V19"/><path d="M4 19h16"/>'),
+  rect: svg('<rect x="4" y="6" width="16" height="12" rx="1.5"/>'),
+  ellipse: svg('<ellipse cx="12" cy="12" rx="8.5" ry="6.5"/>'),
+  line: svg('<path d="M5 19L19 5"/>'),
+  arrow: svg('<path d="M5 19L19 5"/><path d="M10 5h9v9"/>'),
+  filled: svg('<rect x="4" y="6" width="16" height="12" rx="1.5" fill="currentColor"/>'),
   fit: svg('<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>'),
 };
 

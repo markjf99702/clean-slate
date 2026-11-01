@@ -1,7 +1,7 @@
 // A board as an SVG file: a picture that opens anywhere (Google Drive shows it), with the board itself tucked inside
 // so Clean Slate can open it again and carry on drawing. The same file is the Drive copy and the "Download SVG".
 import { BACKGROUNDS, SPACING, shade, shareable, cleanBoard } from './board.js';
-import { outline, pathData, contentBounds, markerMode } from './ink.js';
+import { outline, pathData, contentBounds, markerMode, shapeLines } from './ink.js';
 
 const MARK = 'clean-slate-board';
 const xml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -28,14 +28,33 @@ export function toSVG(board, { margin = 40 } = {}) {
     out.push(`<defs><pattern id="p" width="${S}" height="${S}" patternUnits="userSpaceOnUse">${mark}</pattern></defs>`,
       `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#p)"/>`);
   }
-  const m = markerMode(board.bg);
+  // A run of rub-outs is a mask over everything drawn before it, so the ink so far goes in a group under the mask
+  // and later strokes go on top.
+  const m = markerMode(board.bg), defs = [];
+  let ink = [], rubs = [];
+  const closeRubs = () => {
+    if (!rubs.length) return;
+    const id = 'r' + defs.length;
+    defs.push(`<mask id="${id}" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff"/>${rubs.join('')}</mask>`);
+    ink = [`<g mask="url(#${id})">${ink.join('')}</g>`];
+    rubs = [];
+  };
   for (const s of board.strokes) {
-    const d = pathData(outline(s));
-    if (!d) continue;
-    const extra = s.tool === 'marker' ? (m.op === 'multiply' ? ' style="mix-blend-mode:multiply"' : ` fill-opacity="${m.alpha}"`) : '';
-    out.push(`<path d="${d}" fill="${shade(s, board.bg)}"${extra}/>`);
+    if (s.tool === 'rub') { const d = pathData(outline(s)); if (d) rubs.push(`<path d="${d}" fill="#000"/>`); continue; }
+    closeRubs();
+    const blend = s.tool === 'marker' ? (m.op === 'multiply' ? ' style="mix-blend-mode:multiply"' : ` opacity="${m.alpha}"`) : '';
+    const color = shade(s, board.bg);
+    if (s.shape) {
+      const d = shapeLines(s).map((line, i) => line.map(([px, py], j) => `${j ? 'L' : 'M'}${Math.round(px * 10) / 10} ${Math.round(py * 10) / 10}`).join('') + (i === 0 && s.shape === 'closed' ? 'Z' : '')).join('');
+      ink.push(`<path d="${d}" fill="${s.fill ? color : 'none'}" stroke="${color}" stroke-width="${s.size}" stroke-linecap="round" stroke-linejoin="round"${blend}/>`);
+    } else {
+      const d = pathData(outline(s));
+      if (d) ink.push(`<path d="${d}" fill="${color}"${blend}/>`);
+    }
   }
-  out.push('</svg>');
+  closeRubs();
+  if (defs.length) out.push(`<defs>${defs.join('')}</defs>`);
+  out.push(...ink, '</svg>');
   return out.join('\n');
 }
 

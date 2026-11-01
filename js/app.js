@@ -6,6 +6,7 @@ import { addStrokes, removeStrokes, again, INKS, MARKERS, SIZES, BACKGROUNDS, PA
 import { createSurface } from './surface.js';
 import { picture, thumbnail } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
+import { KINDS } from './shapes.js';
 import { initSync, chip, card, sync, syncState } from './sync.js';
 import { $, esc, icon, toast, ago, twoStep, fileName } from './ui.js';
 
@@ -81,9 +82,11 @@ function redo() {
 }
 
 // ---------- the toolbar ----------
-const TOOLS = [['pen', 'Pen', icon.pen], ['marker', 'Highlighter', icon.marker], ['eraser', 'Eraser', icon.eraser]];
+const TOOLS = [['pen', 'Pen', icon.pen], ['marker', 'Highlighter', icon.marker], ['shape', 'Shapes', icon.rect], ['eraser', 'Eraser', icon.eraser]];
 const SIZE_NAMES = ['Fine', 'Medium', 'Bold'];
 const ERASER_NAMES = ['Small', 'Medium', 'Large'];
+const MODES = { rub: ['Rub out', 'Rubs out just where it touches'], lines: ['Whole lines', 'Takes away every line it touches'] };
+const wide = () => !matchMedia('(max-width: 859px)').matches;
 
 function toolbarHTML() {
   return `<div class="group" role="group" aria-label="Tools">${TOOLS.map(([k, label, svg]) => `<button type="button" class="tool" data-tool="${k}" aria-label="${label}" title="${label}">${svg}</button>`).join('')}</div>
@@ -100,9 +103,13 @@ toolbar.addEventListener('click', e => {
   if (b.dataset.tool) {
     const same = settings.tool === b.dataset.tool;
     setTool(b.dataset.tool);
-    if (same && matchMedia('(max-width: 859px)').matches) togglePop();
+    // The shapes tool always offers its shapes; a tool tapped again on a narrow screen offers its colours and sizes.
+    if (b.dataset.tool === 'shape') { if (same && !pop.hidden) closePop(); else openPop(); }
+    else if (same && !wide()) togglePop();
+    else closePop();
   } else if (b.dataset.color) { settings[penTool()].color = b.dataset.color; saveSettings(); tools(); }
   else if (b.dataset.size) { settings[sizeTool()].size = +b.dataset.size; saveSettings(); tools(); }
+  else if (b.dataset.mode) { settings.eraser.mode = b.dataset.mode; saveSettings(); tools(); }
   else if (b.id === 'styleBtn') togglePop();
   else if (b.id === 'undo') undo();
   else if (b.id === 'redo') redo();
@@ -112,8 +119,16 @@ const sizeTool = () => (settings.tool === 'eraser' ? 'eraser' : penTool());
 function setTool(t) { settings.tool = t; saveSettings(); tools(); surface.redraw(); }
 
 // Colours and sizes for the tool in hand: in the toolbar on a wide screen, in a small pop-up on a narrow one.
+// (Shapes take the pen's colour and size. The eraser has its two ways of erasing where the colours would be.)
+function modesHTML() {
+  return Object.entries(MODES).map(([k, [label, title]]) => `<button type="button" class="mode" data-mode="${k}" title="${title}" aria-pressed="${settings.eraser.mode === k}">${label}</button>`).join('');
+}
+function kindsHTML() {
+  return `<div class="kinds">${Object.entries(KINDS).map(([k, label]) => `<button type="button" class="tool" data-kind="${k}" aria-label="${label}" title="${label}" aria-pressed="${settings.shape.kind === k}">${icon[k]}</button>`).join('')}
+    <span class="sep"></span><button type="button" class="tool" data-fill aria-label="Filled" title="Filled rectangles and ellipses" aria-pressed="${settings.shape.fill}">${icon.filled}</button></div>`;
+}
 function swatchesHTML() {
-  if (settings.tool === 'eraser') return '';
+  if (settings.tool === 'eraser') return modesHTML();
   const set = settings.tool === 'marker' ? MARKERS : INKS, bg = board().bg, mine = settings[penTool()].color;
   return Object.entries(set).map(([k, c]) => `<button type="button" class="swatch" data-color="${k}" aria-label="${c.name}" title="${c.name}" aria-pressed="${k === mine}" style="--c:${shade({ tool: penTool(), color: k }, bg)}"></button>`).join('');
 }
@@ -126,6 +141,7 @@ function tools() {
   toolbar.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === settings.tool)));
   $('.swatches', toolbar).innerHTML = swatchesHTML();
   toolbar.classList.toggle('erasing', settings.tool === 'eraser');
+  $('[data-tool="shape"]', toolbar).innerHTML = icon[settings.shape.kind] || icon.rect;
   $('.sizes', toolbar).innerHTML = sizesHTML();
   const h = hist(current);
   $('#undo').disabled = !h.undo.length;
@@ -136,23 +152,30 @@ function tools() {
   style.style.setProperty('--d', `${[0.5, 0.72, 1][settings[t].size] * 20}px`);
   style.classList.toggle('erasing', settings.tool === 'eraser');
   if (!pop.hidden) fillPop();
-  document.body.dataset.tool = settings.tool;
+  document.body.dataset.using = settings.tool;
 }
 
 const pop = $('#pop');
 function fillPop() {
-  pop.innerHTML = `${settings.tool === 'eraser' ? '' : `<div class="swatches">${swatchesHTML()}</div>`}<div class="sizes">${sizesHTML()}</div>`;
+  const shape = settings.tool === 'shape' ? kindsHTML() : '';
+  const rest = wide() ? '' : `<div class="swatches${settings.tool === 'eraser' ? ' modes' : ''}">${swatchesHTML()}</div><div class="sizes">${sizesHTML()}</div>`;
+  pop.innerHTML = shape + rest;
+  if (!pop.innerHTML) closePop();
 }
-function togglePop() { if (pop.hidden) { fillPop(); pop.hidden = false; } else closePop(); }
+function openPop() { fillPop(); pop.hidden = !pop.innerHTML; }
+function togglePop() { if (pop.hidden) openPop(); else closePop(); }
 function closePop() { pop.hidden = true; }
 pop.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.color) settings[penTool()].color = b.dataset.color;
   if (b.dataset.size) settings[sizeTool()].size = +b.dataset.size;
+  if (b.dataset.mode) settings.eraser.mode = b.dataset.mode;
+  if (b.dataset.kind) settings.shape.kind = b.dataset.kind;
+  if ('fill' in b.dataset) settings.shape.fill = !settings.shape.fill;
   saveSettings();
   tools();
-  if (b.dataset.size || settings.tool === 'eraser') closePop();
+  if (b.dataset.size || (b.dataset.kind && wide())) closePop();
 });
 
 // ---------- zoom ----------
@@ -351,6 +374,7 @@ document.addEventListener('keydown', e => {
   if (k === 'p') setTool('pen');
   else if (k === 'h') setTool('marker');
   else if (k === 'e') setTool('eraser');
+  else if (k === 's') setTool('shape');
   else if (k === 'f') surface.fit();
   else if (/^[1-6]$/.test(k) && settings.tool !== 'eraser') {
     const keys = Object.keys(settings.tool === 'marker' ? MARKERS : INKS);

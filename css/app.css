@@ -75,8 +75,8 @@ button { cursor: pointer; }
   cursor: crosshair;
 }
 .board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-body:not([data-bg="slate"])[data-tool="marker"] .live { mix-blend-mode: multiply; }
-body[data-tool="eraser"] .board { cursor: none; }
+body:not([data-bg="slate"])[data-using="marker"] .live { mix-blend-mode: multiply; }
+body[data-using="eraser"] .board { cursor: none; }
 body.panning .board { cursor: grab; }
 
 .hint {
@@ -189,7 +189,7 @@ body[data-bg="slate"] .hint, body[data-bg="slate"] .hint b { color: rgba(255, 25
 .size:hover, .swatch:hover { background: var(--soft); }
 .size[aria-pressed="true"] { background: var(--soft); }
 .size[aria-pressed="true"] i { opacity: 1; color: var(--accent); }
-body[data-tool="eraser"] .size i { background: transparent; border: 2px solid currentColor; }
+body[data-using="eraser"] .size i { background: transparent; border: 2px solid currentColor; }
 .style i {
   width: var(--d, 14px);
   height: var(--d, 14px);
@@ -198,7 +198,23 @@ body[data-tool="eraser"] .size i { background: transparent; border: 2px solid cu
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 .style.erasing i { background: transparent; border: 2px solid currentColor; box-shadow: none; }
-.tools.erasing .swatches, .tools.erasing .swatches + .sep { display: none; }
+/* The eraser's two ways of erasing sit where the colours are. */
+.mode {
+  height: 34px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text);
+}
+.mode:hover { background: var(--soft); }
+.mode[aria-pressed="true"] { background: var(--soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.tools .swatches { min-width: 0; }
+.kinds { display: flex; align-items: center; gap: 2px; }
+.pop .kinds .tool { width: 44px; height: 44px; }
 
 /* Wide screens show colours and sizes in the toolbar; narrow ones put them behind one button. */
 .narrow { display: none; }
@@ -220,6 +236,8 @@ body[data-tool="eraser"] .size i { background: transparent; border: 2px solid cu
   justify-items: center;
 }
 .pop .swatches, .pop .sizes { display: flex; gap: 2px; }
+.pop .modes { gap: 6px; padding: 4px 0; }
+.pop .mode { height: 40px; padding: 0 14px; font-size: 14.5px; }
 .pop .swatch, .pop .size { width: 44px; height: 44px; }
 .pop .swatch::before { width: 26px; height: 26px; }
 

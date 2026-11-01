@@ -129,12 +129,16 @@ const notes = board('Thursday', [
   loop(240, 748, 140, 42, { color: 'red', size: 3 }),
 ], { bg: 'paper', bgAt: 1, pattern: 'lines', patternAt: 1 });
 
+// Shapes, the way the shapes tool and holding still make them.
+const shape = (pts, o) => ({ id: sid(), t: tick(), tool: 'pen', color: o.color || 'ink', size: o.size || 4, sim: 0, pts: pts.flatMap(([x, y]) => [x, y, 0.5]), shape: o.shape || 'closed', ...(o.fill ? { fill: 1 } : {}) });
 const sketch = board('Shed', [
-  box(200, 260, 460, 440, { size: 4 }),
-  stroke([[190, 268], [330, 160], [470, 268]], { size: 4 }),
-  box(300, 340, 360, 440, { color: 'orange', size: 3.5 }),
-  loop(560, 150, 34, 34, { color: 'orange', size: 4 }),
-  ...write('10 x 8', 240, 500, 30, { color: 'red' }),
+  shape([[200, 268], [460, 268], [460, 440], [200, 440]], {}),
+  shape([[186, 268], [330, 160], [474, 268]], { color: 'red' }),
+  shape([[300, 340], [360, 340], [360, 440], [300, 440]], { color: 'orange', size: 3.5 }),
+  shape(Array.from({ length: 72 }, (_, i) => [560 + Math.cos(i / 72 * Math.PI * 2) * 34, 150 + Math.sin(i / 72 * Math.PI * 2) * 34]), { color: 'orange', fill: true }),
+  shape([[200, 470], [460, 470]], { color: 'blue', size: 3, shape: 'arrow' }),
+  shape([[460, 470], [200, 470]], { color: 'blue', size: 3, shape: 'arrow' }),
+  ...write('10 ft', 296, 506, 28, { color: 'blue' }),
 ], { pattern: 'dots', patternAt: 1 });
 
 garden.changed = tick(); // the newest, at the top of the list

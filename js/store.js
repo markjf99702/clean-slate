@@ -13,13 +13,14 @@ const writing = new Map(); // id -> { busy, again }
 
 export const settingsDefaults = () => ({
   board: '', tool: 'pen', fingers: 'auto', penSeen: false,
-  pen: { color: 'ink', size: 1 }, marker: { color: 'yellow', size: 1 }, eraser: { size: 1 },
+  pen: { color: 'ink', size: 1 }, marker: { color: 'yellow', size: 1 }, eraser: { size: 1, mode: 'rub' },
+  shape: { kind: 'rect', fill: false },
 });
 function readSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(KSET) || '{}');
     const d = settingsDefaults();
-    return { ...d, ...s, pen: { ...d.pen, ...s.pen }, marker: { ...d.marker, ...s.marker }, eraser: { ...d.eraser, ...s.eraser } };
+    return { ...d, ...s, pen: { ...d.pen, ...s.pen }, marker: { ...d.marker, ...s.marker }, eraser: { ...d.eraser, ...s.eraser }, shape: { ...d.shape, ...s.shape } };
   } catch { return settingsDefaults(); }
 }
 export const settings = readSettings();

@@ -5,14 +5,22 @@
 // the board, and while the pen is down or close by, every touch is taken for a resting palm and ignored. Two fingers
 // always move and zoom; a quick tap with two fingers is Undo, with three, Redo. A pen's eraser end, or its side
 // button held down, erases whatever the tool is.
+//
+// Shapes: the shapes tool drags one out, corner to corner. And any line drawn by hand snaps to a clean straight line,
+// triangle, rectangle or ellipse if the pen is held still at the end of it for half a second (moving on afterwards
+// carries on drawing as before).
 import { makeStroke, SIZES, shade } from './board.js';
-import { outline, toPath2D, touches, drawBackground, drawStrokes, markerMode, fitView } from './ink.js';
+import { outline, toPath2D, touches, drawBackground, drawBoard, drawStroke, inkLayer, layerFor, laydown, markerMode, fitView } from './ink.js';
+import { recognize, dragShape } from './shapes.js';
 
 const MIN_Z = 0.1, MAX_Z = 10;
 const clampZ = z => Math.min(MAX_Z, Math.max(MIN_Z, z));
 const PALM_AFTER_PEN = 600; // ms a touch is taken for a palm after the pen was last seen
 const PALM_SIZE = 48; // CSS px across
 const TAP_MS = 320, TAP_MOVE = 14;
+const HOLD_MS = 500, HOLD_MOVE = 5; // holding the pen still this long, within this many CSS px, snaps a shape
+const flatten = pts => pts.flatMap(([x, y]) => [x, y, 0.5]);
+const pairs = flat => { const out = []; for (let i = 0; i < flat.length; i += 3) out.push([flat[i], flat[i + 1]]); return out; };
 
 export function createSurface(host, opts) {
   const { board, settings, onStroke, onErase, onView, onUndo, onRedo, onPenSeen, onBegin } = opts;
@@ -33,8 +41,11 @@ export function createSurface(host, opts) {
   let tap = null;       // a possible two- or three-finger tap
   const fingers = new Map(); // touch pointers that are down: id -> { x, y, x0, y0 }
   let frame = 0, needMain = true, needLive = true;
+  let layer = null, snapLayer = null, workLayer = null; // the ink layer, and two more for a rub-out in progress
+  let holdTimer = 0;
 
   const now = () => performance.now();
+  const inking = () => act?.kind === 'draw' || act?.kind === 'erase' || act?.kind === 'shape';
   const fingersDraw = () => settings.fingers === 'draw' || (settings.fingers === 'auto' && !settings.penSeen);
   const toBoard = (x, y) => ({ x: view.x + x / view.z, y: view.y + y / view.z });
   function local(e) { const r = host.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
@@ -52,16 +63,40 @@ export function createSurface(host, opts) {
     if (needMain) {
       needMain = false;
       mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawBackground(mctx, b, view, w, h);
-      const hidden = act?.kind === 'erase' ? act.gone : null;
-      drawStrokes(mctx, hidden?.size ? b.strokes.filter(s => !hidden.has(s.id)) : b.strokes, b.bg, view, w, h, dpr);
+      if (act?.kind === 'draw' && act.tool === 'rub') paintRub(b);
+      else {
+        const hidden = act?.kind === 'erase' ? act.gone : null;
+        layer = drawBoard(mctx, b, view, w, h, dpr, hidden?.size ? b.strokes.filter(s => !hidden.has(s.id)) : b.strokes, layer);
+      }
     }
     if (needLive) { needLive = false; paintLive(b); }
+  }
+  // A rub-out as it goes: the ink as it was when it started (drawn once), with the rub-out so far cut out of it.
+  function paintRub(b) {
+    if (!act.snap) act.snap = inkLayer(snapLayer = layerFor(main, snapLayer), b.strokes, b.bg, view, w, h, dpr);
+    drawBackground(mctx, b, view, w, h);
+    workLayer = layerFor(main, workLayer);
+    const wc = workLayer.getContext('2d');
+    wc.setTransform(1, 0, 0, 1, 0, 0);
+    wc.globalCompositeOperation = 'copy';
+    wc.drawImage(act.snap, 0, 0);
+    if (act.pts.length) {
+      wc.setTransform(dpr * view.z, 0, 0, dpr * view.z, -view.x * view.z * dpr, -view.y * view.z * dpr);
+      wc.globalCompositeOperation = 'destination-out';
+      wc.fill(toPath2D(outline({ tool: 'rub', size: act.size, pts: act.pts }, false)));
+    }
+    laydown(mctx, workLayer, b.bg);
   }
   function paintLive(b) {
     lctx.setTransform(1, 0, 0, 1, 0, 0);
     lctx.clearRect(0, 0, live.width, live.height);
-    if (act?.kind === 'draw' && act.pts.length) {
+    const preview = act?.kind === 'shape' ? shapeOf(act) : act?.snapped ? snappedOf(act) : null;
+    if (preview) {
+      lctx.setTransform(dpr * view.z, 0, 0, dpr * view.z, -view.x * view.z * dpr, -view.y * view.z * dpr);
+      drawStroke(lctx, preview, b.bg);
+      lctx.globalCompositeOperation = 'source-over';
+      lctx.globalAlpha = 1;
+    } else if (act?.kind === 'draw' && act.tool !== 'rub' && act.pts.length) {
       const pts = act.predicted?.length ? act.pts.concat(act.predicted) : act.pts;
       const s = { tool: act.tool, color: act.color, size: act.size, sim: act.sim, pts };
       lctx.setTransform(dpr * view.z, 0, 0, dpr * view.z, -view.x * view.z * dpr, -view.y * view.z * dpr);
@@ -70,7 +105,7 @@ export function createSurface(host, opts) {
       lctx.fill(toPath2D(outline(s, false)));
       lctx.globalAlpha = 1;
     }
-    const ring = act?.kind === 'erase' ? act.at : hover;
+    const ring = act?.kind === 'erase' || act?.tool === 'rub' ? act.at : hover;
     if (ring) {
       lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       lctx.beginPath();
@@ -98,29 +133,58 @@ export function createSurface(host, opts) {
   new ResizeObserver(resize).observe(host);
   resize();
 
+  // A shape being dragged out with the shapes tool, and a hand-drawn line that has snapped, as strokes to draw.
+  function shapeOf(a) {
+    const r = dragShape(a.shape, a.a.x, a.a.y, a.b.x, a.b.y);
+    return { tool: 'pen', color: a.color, size: a.size, sim: 0, pts: flatten(r.pts), shape: r.shape, fill: a.fill && r.shape === 'closed' ? 1 : 0 };
+  }
+  function snappedOf(a) {
+    return { tool: a.tool, color: a.color, size: a.size, sim: 0, pts: flatten(a.snapped.pts), shape: a.snapped.shape };
+  }
+
   // ---------- the pen, a finger or the mouse, drawing or erasing ----------
   function startInk(e, erasing) {
     const p = local(e);
     try { host.setPointerCapture(e.pointerId); } catch { /* already gone */ }
     onBegin?.();
-    if (erasing) {
-      act = { kind: 'erase', id: e.pointerId, type: e.pointerType, t0: now(), gone: new Set(), last: toBoard(p.x, p.y), at: { ...p, size: settings.eraser.size } };
+    const base = { id: e.pointerId, type: e.pointerType, t0: now() };
+    if (erasing && settings.eraser.mode === 'lines') {
+      act = { ...base, kind: 'erase', gone: new Set(), last: toBoard(p.x, p.y), at: { ...p, size: settings.eraser.size } };
       eraseTo(p);
+    } else if (erasing) {
+      // A rub-out is a line too, one that clears what's under it.
+      act = { ...base, kind: 'draw', tool: 'rub', sim: 0, color: '', size: SIZES.eraser[settings.eraser.size] / view.z, pts: [], at: { ...p, size: settings.eraser.size } };
+      addPoint(e);
+      request(true);
+    } else if (settings.tool === 'shape') {
+      const q = toBoard(p.x, p.y);
+      act = { ...base, kind: 'shape', a: q, b: q, shape: settings.shape.kind, fill: settings.shape.fill, color: settings.pen.color, size: SIZES.pen[settings.pen.size] / view.z };
     } else {
       const tool = settings.tool === 'marker' ? 'marker' : 'pen';
       const sim = e.pointerType !== 'pen';
       act = {
-        kind: 'draw', id: e.pointerId, type: e.pointerType, t0: now(), tool, sim,
+        ...base, kind: 'draw', tool, sim, hold: p, snapped: null,
         color: settings[tool].color, size: SIZES[tool][settings[tool].size] / view.z, pts: [], predicted: null,
       };
       addPoint(e);
+      armHold();
     }
     hover = null;
     request(false);
   }
+  // Held still: if the line so far looks like a shape, it becomes that shape (until the pen moves on).
+  function armHold() { clearTimeout(holdTimer); holdTimer = setTimeout(trySnap, HOLD_MS); }
+  function trySnap() {
+    if (act?.kind !== 'draw' || act.tool === 'rub' || act.snapped) return;
+    const r = recognize(pairs(act.pts), 24 / view.z);
+    if (!r) return;
+    act.snapped = r;
+    try { navigator.vibrate?.(8); } catch { /* not on this device */ }
+    request(false);
+  }
   function addPoint(e) {
     const p = local(e), q = toBoard(p.x, p.y);
-    const pr = act.sim ? 0.5 : Math.max(0.05, Math.min(1, e.pressure || 0.5));
+    const pr = act.sim || act.tool === 'rub' ? 0.5 : Math.max(0.05, Math.min(1, e.pressure || 0.5));
     const n = act.pts.length;
     if (n >= 3 && Math.abs(act.pts[n - 3] - q.x) < 0.05 / view.z && Math.abs(act.pts[n - 2] - q.y) < 0.05 / view.z) return;
     act.pts.push(q.x, q.y, pr);
@@ -130,7 +194,7 @@ export function createSurface(host, opts) {
     const q = toBoard(p.x, p.y), r = eraserRadius() / view.z;
     let hit = false;
     for (const s of b.strokes) {
-      if (act.gone.has(s.id)) continue;
+      if (s.tool === 'rub' || act.gone.has(s.id)) continue; // a rub-out isn't a line to take away
       if (touches(s, act.last.x, act.last.y, q.x, q.y, r)) { act.gone.add(s.id); hit = true; }
     }
     act.last = q;
@@ -140,11 +204,14 @@ export function createSurface(host, opts) {
   function finishInk() {
     const a = act;
     act = null;
-    if (a.kind === 'draw' && a.pts.length) onStroke(makeStroke(a));
+    clearTimeout(holdTimer);
+    if (a.kind === 'draw' && a.snapped) onStroke(makeStroke(snappedOf(a)));
+    else if (a.kind === 'draw' && a.pts.length) onStroke(makeStroke(a));
     else if (a.kind === 'erase' && a.gone.size) onErase([...a.gone]);
+    else if (a.kind === 'shape' && Math.hypot(a.b.x - a.a.x, a.b.y - a.a.y) * view.z >= 4) onStroke(makeStroke(shapeOf(a)));
     request(true);
   }
-  function dropInk() { act = null; request(true); }
+  function dropInk() { act = null; clearTimeout(holdTimer); request(true); }
 
   // ---------- moving and zooming ----------
   function setView(v, quiet) {
@@ -182,7 +249,7 @@ export function createSurface(host, opts) {
       lastPen = now();
       if (!settings.penSeen) { settings.penSeen = true; onPenSeen?.(); }
       if (act && act.type === 'pen') return;
-      if (act?.kind === 'draw' || act?.kind === 'erase') dropInk(); // a palm got there first
+      if (inking()) dropInk(); // a palm got there first
       act = null;
       fingers.clear();
       tap = null;
@@ -200,7 +267,7 @@ export function createSurface(host, opts) {
         if (fingersDraw()) startInk(e, settings.tool === 'eraser'); else startPan(e, p);
       } else {
         if (tap) tap.n = now() - tap.t0 < 250 ? Math.max(tap.n, fingers.size) : 0;
-        if (act?.kind === 'draw' || act?.kind === 'erase') {
+        if (inking()) {
           // A second finger soon after the first: it was the start of a pinch, not a line.
           if (now() - act.t0 < 300) dropInk(); else finishInk();
         }
@@ -217,13 +284,20 @@ export function createSurface(host, opts) {
   function move(e) {
     const p = local(e);
     if (e.pointerType === 'pen') lastPen = now();
-    if (act && act.id === e.pointerId && (act.kind === 'draw' || act.kind === 'erase')) {
+    if (act && act.id === e.pointerId && inking()) {
       const events = e.getCoalescedEvents?.() || [];
       const list = events.length ? events : [e];
-      if (act.kind === 'draw') {
+      if (act.kind === 'shape') {
+        act.b = toBoard(p.x, p.y);
+        request(false);
+      } else if (act.kind === 'draw') {
         for (const ce of list) addPoint(ce);
+        if (act.tool === 'rub') { act.at = { ...p, size: settings.eraser.size }; request(true); return; }
         const pred = e.getPredictedEvents?.() || [];
-        act.predicted = pred.length ? pred.slice(0, 2).flatMap(pe => { const q = local(pe), b = toBoard(q.x, q.y); return [b.x, b.y, act.pts[act.pts.length - 1]]; }) : null;
+        act.predicted = pred.length && !act.snapped ? pred.slice(0, 2).flatMap(pe => { const q = local(pe), b = toBoard(q.x, q.y); return [b.x, b.y, act.pts[act.pts.length - 1]]; }) : null;
+        // Moving: not holding still. A snapped shape lets go once the pen moves on properly.
+        const moved = Math.hypot(p.x - act.hold.x, p.y - act.hold.y);
+        if (moved > (act.snapped ? HOLD_MOVE * 3 : HOLD_MOVE)) { act.snapped = null; act.hold = p; armHold(); }
         request(false);
       } else {
         for (const ce of list) eraseTo(local(ce));
@@ -244,12 +318,13 @@ export function createSurface(host, opts) {
     }
     // Hovering: the eraser shows where it would rub.
     const erasingHover = settings.tool === 'eraser' || (e.pointerType === 'pen' && (e.buttons & 32));
+    // (the ring is the eraser's size, rubbing out or taking whole lines)
     if (!act && e.pointerType !== 'touch' && erasingHover) { hover = { ...p, size: settings.eraser.size }; request(false); }
     else if (hover) { hover = null; request(false); }
   }
 
   function up(e, cancelled) {
-    if (act && act.id === e.pointerId && (act.kind === 'draw' || act.kind === 'erase')) {
+    if (act && act.id === e.pointerId && inking()) {
       if (e.pointerType === 'pen') lastPen = now();
       if (cancelled && e.pointerType === 'touch') dropInk(); else finishInk();
     } else if (act?.kind === 'pan' && act.id === e.pointerId && e.pointerType !== 'touch') {
@@ -307,6 +382,6 @@ export function createSurface(host, opts) {
     zoomBy(k) { zoomAt(w / 2, h / 2, view.z * k); },
     fit() { const b = board(); setView(b.strokes.length ? fitView(b, w, h, Math.min(w, h) * 0.08, 2) : { x: 0, y: 0, z: 1 }); },
     // Stop whatever's in progress, without keeping it (opening another board, say).
-    cancel() { act = null; fingers.clear(); tap = null; request(true); },
+    cancel() { act = null; clearTimeout(holdTimer); fingers.clear(); tap = null; request(true); },
   };
 }

@@ -8,7 +8,7 @@ as a picture, or turn on Google Drive and they go into a folder in your own Driv
 device too. There's no account, no ads and no server.
 
 <p align="center">
-  <img src="docs/tablet-board.png" alt="A tablet-sized board on a faint grid: 'Garden plan' written in black ink, two blue boxes labelled Tomatoes and Beans & peas with red dimension arrows marked 8 ft and 3 ft, a 'To get' checklist with 'stakes' highlighted in yellow, and 'start in May!' circled in green. Above it, a floating toolbar with pen, highlighter and eraser, six colours, three sizes, undo and redo" width="760">
+  <img src="docs/tablet-board.png" alt="A tablet-sized board on a faint grid: 'Garden plan' written in black ink, two blue boxes labelled Tomatoes and Beans & peas with red dimension arrows marked 8 ft and 3 ft, a 'To get' checklist with 'stakes' highlighted in yellow, and 'start in May!' circled in green. Above it, a floating toolbar with pen, highlighter, shapes and eraser, six colours, three sizes, undo and redo" width="760">
 </p>
 
 <p align="center">
@@ -32,10 +32,18 @@ device too. There's no account, no ads and no server.
   goes back to 100%. A quick tap with two fingers is Undo, with three, Redo. **Show it all** in the menu fits the
   whole drawing on screen. With a trackpad, scroll to move and pinch to zoom; with a mouse, the wheel moves it,
   Ctrl + wheel zooms, and Space + drag or the right button moves it.
-- **Pen, highlighter and eraser.** Six ink colours and three sizes, five highlighter colours that multiply into the
-  board so the writing underneath stays black, and an eraser that takes away whole lines it touches. A pen's eraser
-  end, or its side button held down, erases whatever tool is chosen. Each tool remembers its own colour and size.
-  Undo and Redo go back up to 300 steps on each board while the page is open, Clear included.
+- **Pen, highlighter, shapes and eraser.** Six ink colours and three sizes, and five highlighter colours that
+  multiply into the board so the writing underneath stays black. Each tool remembers its own colour and size. Undo
+  and Redo go back up to 300 steps on each board while the page is open, Clear included.
+- **Draw a shape and hold still.** Draw a rough line, box, triangle or circle and keep the pen still at the end for
+  half a second: it snaps to a clean one, in the same colour and size (a phone that can buzzes once). Keep moving
+  and it lets go, so a pause mid-drawing does no harm. A nearly level line is made level, and a nearly round loop
+  round. The **shapes tool** drags out exact rectangles, ellipses, lines and arrows, outlined or filled, in the
+  pen's colour and size.
+- **The eraser rubs out** just where it touches, like a real one: rub the eyes out of a filled-in circle and the
+  board shows through. **Whole lines**, beside it in the toolbar (or in its pop-up on a narrow screen), takes away
+  every line it touches instead. A pen's eraser end, or its side button held down, erases the same way whatever
+  tool is chosen. A rub-out is kept like any other line, so it undoes and syncs the same way.
 - **As many boards as you like.** Each one has a name, a colour (White, Paper or Slate) and lines (Grid, Lines,
   Dots or Blank). The colours change with the board, so black ink turns chalk-white on the slate. Each board opens
   where you left it, at the same zoom.
@@ -53,11 +61,11 @@ device too. There's no account, no ads and no server.
   unless you turn on Google Drive. **Save a backup** puts every board in one file, and **Open a file** brings in a
   backup or a Clean Slate SVG. It works offline, and **Add to Home Screen** makes it a full-screen app with no
   address bar.
-- **Keys:** P pen, H highlighter, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl + Z undo,
+- **Keys:** P pen, H highlighter, S shapes, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl + Z undo,
   Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Esc closes the menu.
 
-What goes to Google Drive, when it's on: each board's name, background, every line (its points, pressure, colour and
-size), and the picture of it. The account's email address is read to show where boards are saved. What stays on each
+What goes to Google Drive, when it's on: each board's name, background, every line, shape and rub-out (its points,
+pressure, colour and size), and the picture of it. The account's email address is read to show where boards are saved. What stays on each
 device: which board is open, where each board is scrolled to, the tool, colours and sizes, and the Fingers setting.
 
 ## Running it
@@ -79,11 +87,16 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 
 - `js/app.js`: the page: the toolbar, the list of boards, the menu, undo, pictures and backups.
 - `js/surface.js`: the board on screen, and what the pen, fingers, mouse and trackpad do to it (palms, pinch, the
-  two- and three-finger taps).
-- `js/board.js`: a board and its strokes, and how two copies of a board merge stroke by stroke. No page needed.
+  two- and three-finger taps, holding still to snap a shape).
+- `js/board.js`: a board and its strokes (pen and highlighter lines, shapes and rub-outs), and how two copies of a
+  board merge stroke by stroke. No page needed.
+- `js/shapes.js`: the shapes tool's shapes, and recognising a hand-drawn line, triangle, rectangle or ellipse. No page
+  needed.
 - `js/ink.js`: how a stroke looks (its outline, from perfect-freehand), what the eraser touches, and drawing on a
-  canvas for the screen, the PNG and the thumbnails.
-- `js/svg.js`: a board as an SVG picture with the board tucked inside, for Drive and the SVG download.
+  canvas for the screen, the PNG and the thumbnails. The ink goes on its own layer so a rub-out clears the ink and
+  leaves the board's colour and lines.
+- `js/svg.js`: a board as an SVG picture with the board tucked inside, for Drive and the SVG download. Rub-outs are
+  masks over what was drawn before them.
 - `js/store.js`: boards in IndexedDB and settings in localStorage, and changes from the page's other tabs.
 - `js/sync.js`: saving to Google Drive (the shared junkdrawer.works sign-in, one file per board, merged per stroke).
 - `js/vendor/perfect-freehand.js`: [perfect-freehand](https://github.com/steveruizok/perfect-freehand) 1.2.3 by
@@ -92,7 +105,7 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `sw.js`: keeps a copy for using offline, and opens from it when the connection isn't answering. `FILES` in it is a
   fingerprint of the files it keeps: change one and `npm test` says what to set it to, so a release never leaves the
   copy half old.
-- `test/unit.test.mjs`: merging, the SVG file and the eraser, in Node. `test/e2e.mjs`: a pen with pressure, palms,
+- `test/unit.test.mjs`: merging, the SVG file, shapes and the eraser, in Node. `test/e2e.mjs`: a pen with pressure, palms,
   pinches and taps through Chrome's own input, then two devices sharing a stand-in Google Drive
   (`test/fake-google.mjs`), then offline.
 - `tools/screenshots.mjs`: draws the sample boards stroke by stroke, with handwriting from the Hershey Script font
